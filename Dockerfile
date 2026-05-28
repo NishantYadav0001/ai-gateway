@@ -7,7 +7,6 @@ RUN mvn clean package -DskipTests
 FROM eclipse-temurin:17-jre
 WORKDIR /app
 COPY --from=build /app/target/*.jar app.jar
-# The key for Render is to ensure we explicitly use the port assigned
-ENV PORT=8080
+# Render expects services to listen on the port defined by the $PORT environment variable
 EXPOSE 8080
-ENTRYPOINT ["java", "-Dserver.port=${PORT}", "-jar", "app.jar"]
+ENTRYPOINT ["java", "-jar", "app.jar"]
