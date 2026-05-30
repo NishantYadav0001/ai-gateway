@@ -1,4 +1,4 @@
-package com.smartcache.gateway.service;
+﻿package com.smartcache.gateway.service;
 
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.messages.AssistantMessage;
@@ -67,6 +67,8 @@ public class ChatService {
             return null;
         }, chatId);
 
+        history.add(new UserMessage(prompt));
+
         // 3. ROUTING LOGIC
         boolean isComplex = isComplexRequest(prompt);
         String routingTag = isComplex ? "[ROUTED: Llama 70B Heavy Brain]" : "[ROUTED: Llama 8B Fast Brain]";
@@ -80,8 +82,8 @@ public class ChatService {
         // 4. CALL AI WITH COMBINED CONTEXT WINDOW
         String responseText = this.chatClient.prompt()
                 .system(dynamicSystemPrompt)
-                .messages(history) // Inject our SQL database history here directly!
-                .user(prompt)
+                
+                .messages(history)
                 .options(OpenAiChatOptions.builder()
                     .model(targetModel)
                     .build())
@@ -102,3 +104,4 @@ public class ChatService {
         return responseText;
     }
 }
+
