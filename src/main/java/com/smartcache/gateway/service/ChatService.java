@@ -1,4 +1,4 @@
-﻿package com.smartcache.gateway.service;
+package com.smartcache.gateway.service;
 
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.messages.AssistantMessage;
