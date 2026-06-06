@@ -63,6 +63,7 @@ public class SecurityConfig {
         http
             .cors(Customizer.withDefaults())
             .csrf(csrf -> csrf.disable())
+            .headers(headers -> headers.frameOptions(frame -> frame.disable()))
             .authorizeHttpRequests(authorize -> authorize
                 // 1. Swagger Documentation (Public)
                 .requestMatchers("/swagger-ui/**", "/v3/api-docs/**").permitAll()
