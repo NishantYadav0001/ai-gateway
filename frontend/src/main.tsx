@@ -9,7 +9,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
     <Auth0Provider
       // Hardcoded public keys to bypass Hugging Face build-time traps
       domain="dev-o6f4jp4nbv43fhz0.us.auth0.com"
-      clientId="PASTE_YOUR_ACTUAL_CLIENT_ID_HERE" 
+      clientId="dUgewgoSwXtWLzX8wpaerOkI0Lik69li" 
       authorizationParams={{
         redirect_uri: window.location.origin,
         audience: "https://api.smartcache.gateway"
