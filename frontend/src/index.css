@@ -1,0 +1,16 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", system-ui, sans-serif;
+}
+
+body {
+  @apply bg-zinc-900 text-zinc-100;
+  margin: 0;
+  padding: 0;
+  font-family: var(--font-sans);
+<<<<<<< HEAD
+}
+=======
+}
+>>>>>>> 7863711792b8e6ad242e87e929f5c3ad2b21979d
