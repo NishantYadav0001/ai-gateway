@@ -152,7 +152,7 @@ function App() {
             </button>
             <button
               onClick={() =>
-                loginWithRedirect({
+                loginWithPopup({
                   authorizationParams: { screen_hint: "signup" },
                 })
               }
