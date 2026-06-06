@@ -11,6 +11,7 @@ function App() {
     isAuthenticated,
     error: authError,
     loginWithRedirect,
+    loginWithPopup,
     logout,
     user,
     getAccessTokenSilently,
