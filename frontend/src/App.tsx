@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 import React, { useState, useRef, useEffect } from "react";
 import { useAuth0 } from "@auth0/auth0-react";
 import { v4 as uuidv4 } from "uuid";
@@ -55,30 +54,6 @@ function App() {
   // Auto-scroll to bottom whenever messages change
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-=======
-import React, { useState, useRef, useEffect } from 'react';
-import { v4 as uuidv4 } from 'uuid';
-import { ChatMessage, type Message } from './components/ChatMessage';
-import { ChatInput } from './components/ChatInput';
-import { sendMessage } from './api';
-
-function App() {
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [input, setInput] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-  const [chatId, setChatId] = useState<string>('');
-  
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-
-  // Initialize a stable chat session ID on first load
-  useEffect(() => {
-    setChatId(uuidv4());
-  }, []);
-
-  // Auto-scroll to bottom whenever messages change
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
->>>>>>> 7863711792b8e6ad242e87e929f5c3ad2b21979d
   }, [messages, isLoading]);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -86,7 +61,6 @@ function App() {
     if (!input.trim() || isLoading) return;
 
     const userText = input.trim();
-<<<<<<< HEAD
     setInput("");
 
     // Add User message
@@ -122,35 +96,6 @@ function App() {
         id: uuidv4(),
         role: "assistant",
         content: `**Error:** ${errorMessageText}`,
-=======
-    setInput('');
-    
-    // Add User message
-    const userMessage: Message = {
-      id: uuidv4(),
-      role: 'user',
-      content: userText,
-    };
-    setMessages((prev) => [...prev, userMessage]);
-    
-    setIsLoading(true);
-
-    try {
-      const response = await sendMessage(userText, chatId);
-      
-      const assistantMessage: Message = {
-        id: uuidv4(),
-        role: 'assistant',
-        content: response.response,
-      };
-      
-      setMessages((prev) => [...prev, assistantMessage]);
-    } catch (error: any) {
-      const errorMessage: Message = {
-        id: uuidv4(),
-        role: 'assistant',
-        content: `**Error:** ${error.message || 'Something went wrong while connecting to the AI Gateway.'}`,
->>>>>>> 7863711792b8e6ad242e87e929f5c3ad2b21979d
       };
       setMessages((prev) => [...prev, errorMessage]);
     } finally {
@@ -158,7 +103,6 @@ function App() {
     }
   };
 
-<<<<<<< HEAD
   // Show loading state while Auth0 is initializing
   if (authLoading) {
     return (
@@ -258,22 +202,6 @@ function App() {
             >
               Logout
             </button>
-=======
-  return (
-    <div className="flex flex-col h-screen bg-zinc-900 overflow-hidden font-sans text-zinc-100">
-      
-      {/* Header */}
-      <header className="flex-shrink-0 border-b border-zinc-800 bg-zinc-900/50 backdrop-blur-md z-10">
-        <div className="flex items-center justify-between max-w-3xl mx-auto px-4 py-3 md:px-6">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center border border-emerald-500/20">
-              <span className="text-emerald-400 font-bold tracking-tighter">AI</span>
-            </div>
-            <h1 className="font-semibold text-zinc-100 tracking-tight">Smart Gateway</h1>
-          </div>
-          <div className="text-xs text-zinc-500 border border-zinc-800 rounded-full px-2 py-0.5">
-            Beta
->>>>>>> 7863711792b8e6ad242e87e929f5c3ad2b21979d
           </div>
         </div>
       </header>
@@ -285,7 +213,6 @@ function App() {
             <div className="w-16 h-16 rounded-2xl bg-zinc-800/50 flex items-center justify-center border border-zinc-700/50 mb-4">
               <span className="text-2xl">✨</span>
             </div>
-<<<<<<< HEAD
             <h2 className="text-xl font-medium text-zinc-300">
               How can I help you today?
             </h2>
@@ -298,23 +225,13 @@ function App() {
                 Logged in as {user.email}
               </p>
             )}
-=======
-            <h2 className="text-xl font-medium text-zinc-300">How can I help you today?</h2>
-            <p className="max-w-sm text-sm leading-relaxed">
-              Experience lightning-fast responses with our intelligent caching layer and dynamic Llama model routing.
-            </p>
->>>>>>> 7863711792b8e6ad242e87e929f5c3ad2b21979d
           </div>
         ) : (
           <div className="flex flex-col pb-4">
             {messages.map((msg) => (
               <ChatMessage key={msg.id} message={msg} />
             ))}
-<<<<<<< HEAD
 
-=======
-            
->>>>>>> 7863711792b8e6ad242e87e929f5c3ad2b21979d
             {isLoading && (
               <div className="flex w-full px-4 py-6 md:px-6 bg-zinc-800/50">
                 <div className="flex w-full max-w-3xl mx-auto gap-4 md:gap-6">
@@ -334,18 +251,13 @@ function App() {
                 </div>
               </div>
             )}
-<<<<<<< HEAD
 
-=======
-            
->>>>>>> 7863711792b8e6ad242e87e929f5c3ad2b21979d
             <div ref={messagesEndRef} className="h-4" />
           </div>
         )}
       </div>
 
       {/* Input Area */}
-<<<<<<< HEAD
       {isAuthenticated && (
         <div className="flex-shrink-0 bg-gradient-to-t from-zinc-900 via-zinc-900 to-transparent pt-4">
           <ChatInput
@@ -356,17 +268,6 @@ function App() {
           />
         </div>
       )}
-=======
-      <div className="flex-shrink-0 bg-gradient-to-t from-zinc-900 via-zinc-900 to-transparent pt-4">
-        <ChatInput
-          input={input}
-          setInput={setInput}
-          onSubmit={handleSubmit}
-          isLoading={isLoading}
-        />
-      </div>
-
->>>>>>> 7863711792b8e6ad242e87e929f5c3ad2b21979d
     </div>
   );
 }

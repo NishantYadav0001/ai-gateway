@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import "./index.css";
@@ -22,15 +21,3 @@ createRoot(document.getElementById("root")!).render(
     </Auth0Provider>
   </StrictMode>,
 );
-=======
-import { StrictMode } from 'react'
-import { createRoot } from 'react-dom/client'
-import './index.css'
-import App from './App.tsx'
-
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
-)
->>>>>>> 7863711792b8e6ad242e87e929f5c3ad2b21979d

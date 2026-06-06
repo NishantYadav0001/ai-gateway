@@ -100,13 +100,7 @@ public class ChatService {
             return null;
         }, chatId, userId);
 
-<<<<<<< HEAD
         boolean escalateToGemini = requiresCognitiveEscalation(history, prompt);
-=======
-        history.add(new UserMessage(prompt));
-
-        // 3. ROUTING LOGIC
->>>>>>> 7863711792b8e6ad242e87e929f5c3ad2b21979d
         boolean isComplex = isComplexRequest(prompt);
         boolean cacheable = isCacheableQuery(prompt);
 
@@ -121,24 +115,11 @@ public class ChatService {
                             new Filter.Value(userId)))
                     .build();
 
-<<<<<<< HEAD
             List<Document> similarDocs = vectorStore.similaritySearch(searchRequest);
             if (!similarDocs.isEmpty()) {
                 return similarDocs.get(0).getMetadata().get("answer").toString() + "\n\n[⚡ CACHED: Pinecone Vector Database]";
             }
         }
-=======
-        // 4. CALL AI WITH COMBINED CONTEXT WINDOW
-        String responseText = this.chatClient.prompt()
-                .system(dynamicSystemPrompt)
-                
-                .messages(history)
-                .options(OpenAiChatOptions.builder()
-                    .model(targetModel)
-                    .build())
-                .call()
-                .content();
->>>>>>> 7863711792b8e6ad242e87e929f5c3ad2b21979d
 
         history.add(new UserMessage(prompt));
         ChatResponse chatResponse = null;
@@ -208,13 +189,8 @@ public class ChatService {
 
         return responseText;
     }
-<<<<<<< HEAD
 
     private void saveUsage(String userId, int promptTokens, int completionTokens) {
         apiUsageRepository.save(new ApiUsage(userId, promptTokens, completionTokens));
     }
 }
-=======
-}
-
->>>>>>> 7863711792b8e6ad242e87e929f5c3ad2b21979d
