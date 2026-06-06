@@ -64,10 +64,21 @@ public class SecurityConfig {
             .cors(Customizer.withDefaults())
             .csrf(csrf -> csrf.disable())
             .authorizeHttpRequests(authorize -> authorize
+                // 1. Swagger Documentation (Public)
                 .requestMatchers("/swagger-ui/**", "/v3/api-docs/**").permitAll()
+                
+                // 2. React Frontend Assets (Public)
+                // This allows Vite's bundled CSS/JS and your main HTML to load
+                .requestMatchers("/", "/index.html", "/assets/**", "/static/**", "/*.svg", "/*.ico").permitAll()
+                
+                // 3. CORS Pre-flight requests (Public)
                 .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
-                .requestMatchers("/api/v1/chat", "/api/v1/chat/").authenticated()
-                .anyRequest().permitAll()
+                
+                // 4. Protect ALL backend APIs globally
+                .requestMatchers("/api/**").authenticated()
+                
+                // 5. Zero-Trust Fallback (If it's not explicitly public, lock it down)
+                .anyRequest().authenticated()
             )
             .oauth2ResourceServer(oauth2 -> oauth2.jwt(Customizer.withDefaults()));
 
