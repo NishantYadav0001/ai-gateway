@@ -11,7 +11,9 @@
     "build:spring": "vite build --outDir ../src/main/resources/static --emptyOutDir"
   },
   "dependencies": {
+
     "@auth0/auth0-react": "^2.17.0",
+
     "clsx": "^2.1.1",
     "lucide-react": "^1.17.0",
     "react": "^19.2.6",
@@ -38,4 +40,7 @@
     "typescript-eslint": "^8.59.2",
     "vite": "^8.0.12"
   }
+
+
 }
+
