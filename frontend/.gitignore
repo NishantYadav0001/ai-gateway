@@ -33,4 +33,3 @@ frontend/node_modules/
 frontend/dist/
 frontend/dist-spring/
 .env
-.env.production
