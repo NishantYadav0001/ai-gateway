@@ -153,7 +153,7 @@ function App() {
           <div className="w-16 h-16 rounded-2xl bg-emerald-500/10 flex items-center justify-center border border-emerald-500/20 mx-auto mb-6">
             <span className="text-3xl">🔐</span>
           </div>
-          <h1 className="text-3xl font-bold text-zinc-100 mb-2">SmartCache</h1>
+          <h1 className="text-3xl font-bold text-zinc-100 mb-2">SmartCache AI</h1>
           <p className="text-zinc-400 mb-8">AI Semantic Gateway</p>
           <div className="space-y-3">
             <button

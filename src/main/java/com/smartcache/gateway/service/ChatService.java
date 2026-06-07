@@ -33,6 +33,14 @@ public class ChatService {
 
     private static final Logger logger = LoggerFactory.getLogger(ChatService.class);
 
+    private static final String SYSTEM_PROMPT = """
+            You are the SmartCache AI Semantic Gateway, a high-performance technical routing assistant. 
+            Follow these strict output rules:
+            1. CONCISENESS: Zero filler text. Do not say "Here is the answer" or "I can help." Jump straight to the technical solution.
+            2. FORMATTING: Use strict Markdown. Use bold (**text**) for definitions, bullet points (-) for lists, and backticks (`) for code. 
+            3. SPACING & STREAMING: Use single line breaks between paragraphs and list items. Do NOT use double empty lines or massive vertical gaps. Maintain a tight, readable structure.
+            4. TONE: Professional, direct, and highly technical.""";
+
     private final OpenAiChatModel groqModel;
     private final GoogleGenAiChatModel geminiModel;
     private final VectorStore vectorStore;
@@ -139,7 +147,7 @@ public class ChatService {
             try {
                 routingTag = "[🧠 ESCALATED: gemini-3.5-flash]";
                 chatResponse = geminiChatClient.prompt()
-                        .system("You are the SmartCache AI Semantic Gateway, a high-performance technical routing assistant. 1. CONCISENESS: Never use filler text. Jump straight to the technical answer. 2. FORMATTING: Use Markdown. 3. PERSONALITY: Professional and direct. 4. LENGTH: Keep responses as short as possible while remaining accurate.")
+                        .system(SYSTEM_PROMPT)
                         .messages(history)
                         .options(GoogleGenAiChatOptions.builder().model("gemini-3.5-flash").build())
                         .call()
@@ -149,7 +157,7 @@ public class ChatService {
                 // FAILSAFE: If Gemini is down, force it to use the Heavy Groq model
                 routingTag = "[🛡️ FAILSAFE ROUTED: Groq Llama 3.3 Heavy Brain]";
                 chatResponse = groqChatClient.prompt()
-                        .system("You are the SmartCache AI Semantic Gateway, a high-performance technical routing assistant. 1. CONCISENESS: Never use filler text. Jump straight to the technical answer. 2. FORMATTING: Use Markdown. 3. PERSONALITY: Professional and direct. 4. LENGTH: Keep responses as short as possible while remaining accurate.")
+                        .system(SYSTEM_PROMPT)
                         .messages(history)
                         .options(OpenAiChatOptions.builder().model("llama-3.3-70b-versatile").build())
                         .call()
@@ -158,7 +166,7 @@ public class ChatService {
         } else if (isComplex) {
             routingTag = "[🛠️ ROUTED: Groq Llama 3.3 Heavy Brain]";
             chatResponse = groqChatClient.prompt()
-                        .system("You are the SmartCache AI Semantic Gateway, a high-performance technical routing assistant. 1. CONCISENESS: Never use filler text. Jump straight to the technical answer. 2. FORMATTING: Use Markdown. 3. PERSONALITY: Professional and direct. 4. LENGTH: Keep responses as short as possible while remaining accurate.")
+                        .system(SYSTEM_PROMPT)
                     .messages(history)
                     .options(OpenAiChatOptions.builder().model("llama-3.3-70b-versatile").build())
                         .call()
@@ -166,7 +174,7 @@ public class ChatService {
         } else {
             routingTag = "[🏎️ ROUTED: Groq Llama 3.1 Fast Brain]";
             chatResponse = groqChatClient.prompt()
-                        .system("You are the SmartCache AI Semantic Gateway, a high-performance technical routing assistant. 1. CONCISENESS: Never use filler text. Jump straight to the technical answer. 2. FORMATTING: Use Markdown. 3. PERSONALITY: Professional and direct. 4. LENGTH: Keep responses as short as possible while remaining accurate.")
+                        .system(SYSTEM_PROMPT)
                     .messages(history)
                     .options(OpenAiChatOptions.builder().model("llama-3.1-8b-instant").build())
                         .call()
@@ -247,7 +255,7 @@ public class ChatService {
             try {
                 routingTag = "\n\n[🧠 ESCALATED: gemini-3.5-flash]";
                 chatResponseStream = geminiChatClient.prompt()
-                        .system("You are the SmartCache AI Semantic Gateway, a high-performance technical routing assistant. 1. CONCISENESS: Never use filler text. Jump straight to the technical answer. 2. FORMATTING: Use Markdown. 3. PERSONALITY: Professional and direct. 4. LENGTH: Keep responses as short as possible while remaining accurate.")
+                        .system(SYSTEM_PROMPT)
                         .messages(history)
                         .options(GoogleGenAiChatOptions.builder().model("gemini-3.5-flash").build())
                         .stream()
@@ -256,7 +264,7 @@ public class ChatService {
                 logger.warn("Gemini API Overloaded (503). Triggering Fallback to Groq Llama 3.3.");
                 routingTag = "\n\n[🛡️ FAILSAFE ROUTED: Groq Llama 3.3 Heavy Brain]";
                 chatResponseStream = groqChatClient.prompt()
-                        .system("You are the SmartCache AI Semantic Gateway, a high-performance technical routing assistant. 1. CONCISENESS: Never use filler text. Jump straight to the technical answer. 2. FORMATTING: Use Markdown. 3. PERSONALITY: Professional and direct. 4. LENGTH: Keep responses as short as possible while remaining accurate.")
+                        .system(SYSTEM_PROMPT)
                         .messages(history)
                         .options(OpenAiChatOptions.builder().model("llama-3.3-70b-versatile").build())
                         .stream()
@@ -265,7 +273,7 @@ public class ChatService {
         } else if (isComplex) {
             routingTag = "\n\n[🛠️ ROUTED: Groq Llama 3.3 Heavy Brain]";
             chatResponseStream = groqChatClient.prompt()
-                        .system("You are the SmartCache AI Semantic Gateway, a high-performance technical routing assistant. 1. CONCISENESS: Never use filler text. Jump straight to the technical answer. 2. FORMATTING: Use Markdown. 3. PERSONALITY: Professional and direct. 4. LENGTH: Keep responses as short as possible while remaining accurate.")
+                        .system(SYSTEM_PROMPT)
                     .messages(history)
                     .options(OpenAiChatOptions.builder().model("llama-3.3-70b-versatile").build())
                     .stream()
@@ -273,7 +281,7 @@ public class ChatService {
         } else {
             routingTag = "\n\n[🏎️ ROUTED: Groq Llama 3.1 Fast Brain]";
             chatResponseStream = groqChatClient.prompt()
-                        .system("You are the SmartCache AI Semantic Gateway, a high-performance technical routing assistant. 1. CONCISENESS: Never use filler text. Jump straight to the technical answer. 2. FORMATTING: Use Markdown. 3. PERSONALITY: Professional and direct. 4. LENGTH: Keep responses as short as possible while remaining accurate.")
+                        .system(SYSTEM_PROMPT)
                     .messages(history)
                     .options(OpenAiChatOptions.builder().model("llama-3.1-8b-instant").build())
                     .stream()
