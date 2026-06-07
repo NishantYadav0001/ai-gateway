@@ -63,11 +63,14 @@ export const sendMessageStream = async (
     const lines = chunk.split('\n');
 
     for (const line of lines) {
-        if (line.trim().startsWith('data:')) {
-            // Remove the prefix
-            let content = line.replace('data:', '').trim();
+        if (line.startsWith('data:')) {
+            // Remove the 'data:' prefix and at most one leading space per SSE spec
+            let content = line.slice(5);
+            if (content.startsWith(' ')) {
+                content = content.slice(1);
+            }
             
-            // Only append if there is actual content
+            // Append the content, preserving intentional spacing between tokens
             if (content.length > 0) {
                 // If the content is just a newline, replace it with a space 
                 // to maintain paragraph flow
