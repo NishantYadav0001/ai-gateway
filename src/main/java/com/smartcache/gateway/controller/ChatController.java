@@ -1,8 +1,7 @@
 package com.smartcache.gateway.controller;
 
 import com.smartcache.gateway.service.ChatService;
-
-import org.springframework.ai.chat.model.ChatResponse;
+import com.smartcache.gateway.service.DynamicIntentRouter;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -10,6 +9,7 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 @RestController
@@ -17,9 +17,12 @@ import java.util.UUID;
 public class ChatController {
 
     private final ChatService chatService;
+    private final DynamicIntentRouter intentRouter;
 
-    public ChatController(ChatService chatService) {
+    // Inject both the ChatService and your new IntentRouter
+    public ChatController(ChatService chatService, DynamicIntentRouter intentRouter) {
         this.chatService = chatService;
+        this.intentRouter = intentRouter;
     }
 
     @PostMapping({"/chat", "/chat/"})
@@ -43,6 +46,17 @@ public class ChatController {
         }
 
         try {
+            // 1. ZERO-LATENCY FAST-PATH: Check RAM-cached intents first
+            Optional<String> fastResponse = intentRouter.checkFastPath(prompt);
+            
+            if (fastResponse.isPresent()) {
+                return ResponseEntity.ok(Map.of(
+                    "chatId", chatId,
+                    "response", fastResponse.get()
+                ));
+            }
+
+            // 2. GENERATIVE PATH: Pass to AI Service if no intent matched
             String aiResponse = chatService.processChatMessage(chatId, prompt, userId);
 
             return ResponseEntity.ok(Map.of(
@@ -58,19 +72,4 @@ public class ChatController {
     }
 
     public record ChatRequest(String chatId, String prompt) {}
-
-    @PostMapping("/api/v1/chat")
-    public ResponseEntity<?> handleChat(@RequestBody ChatRequest request) {
-        
-        // 1. Check the Zero-Latency Fast-Path First
-        Optional<String> fastResponse = dynamicIntentRouter.checkFastPath(request.getMessage());
-        
-        if (fastResponse.isPresent()) {
-            return ResponseEntity.ok(new ChatResponse(fastResponse.get()));
-        }
-
-        // 2. If it didn't match a rule, pass it to Groq/Gemini
-        String aiResponse = aiService.callGroq(request.getMessage());
-        return ResponseEntity.ok(new ChatResponse(aiResponse));
-    }
 }
