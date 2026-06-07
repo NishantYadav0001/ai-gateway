@@ -10,7 +10,6 @@ function App() {
     isLoading: authLoading,
     isAuthenticated,
     error: authError,
-    loginWithRedirect,
     loginWithPopup,
     logout,
     user,
@@ -87,12 +86,18 @@ function App() {
         chatId,
         accessToken || undefined,
         (currentText) => {
-          setMessages((prev) => 
-            prev.map((msg) => 
-              msg.id === assistantMsgId ? { ...msg, content: currentText } : msg
-            )
-          );
-        }
+          setMessages((prev) => {
+      const lastMsg = prev[prev.length - 1];
+      // Only update if the message is actually the assistant's message
+      if (lastMsg.role === 'assistant') {
+        return [
+          ...prev.slice(0, -1),
+          { ...lastMsg, content: currentText }
+        ];
+      }
+      return prev;
+    });
+  }
       );
     } catch (error: unknown) {
       const errorMessageText = error instanceof Error ? error.message : "Error connecting to Gateway.";
@@ -120,6 +125,10 @@ function App() {
 
   // Show error state if Auth0 has an error
   if (authError) {
+    function loginWithRedirect(): void {
+      throw new Error("Function not implemented.");
+    }
+
     return (
       <div className="flex items-center justify-center h-screen bg-zinc-900">
         <div className="text-center max-w-md">
