@@ -7,6 +7,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.http.MediaType;
+import reactor.core.publisher.Flux;
 
 import java.util.Map;
 import java.util.Optional;
@@ -69,6 +71,33 @@ public class ChatController {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(Map.of("error", "Failed to communicate with AI provider. Please try again later."));
         }
+    }
+
+
+
+    // ... your existing endpoints ...
+
+    @PostMapping(value = "/chat/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public Flux<String> handleChatStream(
+            @RequestBody ChatRequest request,
+            @AuthenticationPrincipal Jwt jwt) {
+
+        // 1. JWT & Validation checks (same as before)
+        String prompt = request.prompt();
+        String userId = jwt != null ? jwt.getSubject() : "anonymous";
+        String chatId = (request.chatId() != null && !request.chatId().trim().isEmpty())
+                ? request.chatId()
+                : UUID.randomUUID().toString();
+
+        // 2. Zero-Latency Fast-Path Check
+        Optional<String> fastResponse = intentRouter.checkFastPath(prompt);
+        if (fastResponse.isPresent()) {
+            // If it's a fast-path, we just emit the single string as a stream
+            return Flux.just(fastResponse.get());
+        }
+
+        // 3. Generative Path (Streamed)
+        return chatService.processChatMessageStream(chatId, prompt, userId);
     }
 
     public record ChatRequest(String chatId, String prompt) {}

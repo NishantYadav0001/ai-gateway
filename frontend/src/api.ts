@@ -3,51 +3,66 @@ export interface ChatResponse {
   response: string;
 }
 
-/**
- * Sends a chat message to the Spring Boot backend with Auth0 JWT token.
- *
- * IMPORTANT:
- * - This function targets http://localhost:8080 (Spring Boot Resource Server)
- * - The JWT token is automatically retrieved by Auth0 with the 'audience' parameter
- * - RS256 signed JWTs are generated when 'audience' is set in Auth0Provider config
- *
- * @param prompt - The user's message text
- * @param chatId - Unique chat session identifier
- * @param jwt - RS256 JWT access token from Auth0 (retrieved via getAccessTokenSilently)
- * @returns ChatResponse with the AI gateway's response
- */
+// Keep your existing sendMessage for legacy calls
 export const sendMessage = async (
   prompt: string,
   chatId?: string,
   jwt?: string,
 ): Promise<ChatResponse> => {
-  // Use http://localhost:8080/api/v1 during local development, and relative path /api/v1 in production
-  const baseURL = import.meta.env.DEV
-    ? "http://localhost:8080/api/v1"
-    : "/api/v1";
-  const endpoint = `${baseURL}/chat`;
+  const baseURL = import.meta.env.DEV ? "http://localhost:8080/api/v1" : "/api/v1";
+  
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (jwt) headers.Authorization = `Bearer ${jwt}`;
 
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-  };
-
-  // Attach the RS256 JWT in the Authorization header for the OAuth2 Resource Server
-  if (jwt) {
-    headers.Authorization = `Bearer ${jwt}`;
-  }
-
-  const response = await fetch(endpoint, {
+  const response = await fetch(`${baseURL}/chat`, {
     method: "POST",
     headers,
     body: JSON.stringify({ prompt, chatId }),
   });
 
   if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(
-      errorData.error || "Failed to communicate with AI provider.",
-    );
+    throw new Error("Failed to communicate with AI provider.");
+  }
+  return response.json();
+};
+
+/**
+ * Streams the AI response from the backend.
+ * @param onChunk - Callback triggered every time a new token arrives
+ */
+export const sendMessageStream = async (
+  prompt: string,
+  chatId: string,
+  jwt: string | undefined,
+  onChunk: (text: string) => void
+): Promise<string> => {
+  const baseURL = import.meta.env.DEV ? "http://localhost:8080/api/v1" : "/api/v1";
+  
+  const response = await fetch(`${baseURL}/chat/stream`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(jwt ? { Authorization: `Bearer ${jwt}` } : {}),
+    },
+    body: JSON.stringify({ prompt, chatId }),
+  });
+
+  if (!response.ok) throw new Error("Streaming failed");
+
+  const reader = response.body?.getReader();
+  const decoder = new TextDecoder();
+  let fullText = "";
+
+  if (!reader) throw new Error("Stream reader not available");
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    const chunk = decoder.decode(value, { stream: true });
+    fullText += chunk;
+    onChunk(fullText); // Push the updated full string to the UI
   }
 
-  return response.json();
+  return fullText;
 };

@@ -24,6 +24,7 @@ import org.slf4j.LoggerFactory;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import reactor.core.publisher.Flux;
 
 @Service
 public class ChatService {
@@ -154,7 +155,7 @@ public class ChatService {
                     .system("You are an Expert Software Engineer. Provide highly detailed technical answers.")
                     .messages(history)
                     .options(OpenAiChatOptions.builder().model("llama-3.3-70b-versatile").build())
-                    .call()
+                        .call()
                     .chatResponse();
         } else {
             routingTag = "[🏎️ ROUTED: Groq Llama 3.1 Fast Brain]";
@@ -162,7 +163,7 @@ public class ChatService {
                     .system("You are a helpful assistant. Answer the user's specific question accurately based on context.")
                     .messages(history)
                     .options(OpenAiChatOptions.builder().model("llama-3.1-8b-instant").build())
-                    .call()
+                        .call()
                     .chatResponse();
         }
 
@@ -188,6 +189,113 @@ public class ChatService {
         }
 
         return responseText;
+    }
+
+    public Flux<String> processChatMessageStream(String chatId, String prompt, String userId) {
+        if (userId == null || userId.isBlank()) {
+            throw new IllegalArgumentException("JWT subject (userId) is required");
+        }
+
+        List<Message> history = new ArrayList<>();
+        String selectSql = "SELECT message_role, message_content FROM chat_messages " +
+                "WHERE chat_id = ? AND user_id = ? ORDER BY id DESC LIMIT 10";
+
+        jdbcTemplate.query(selectSql, (rs, rowNum) -> {
+            String role = rs.getString("message_role");
+            String content = rs.getString("message_content");
+            if ("USER".equalsIgnoreCase(role)) {
+                history.add(0, new UserMessage(content));
+            } else if ("ASSISTANT".equalsIgnoreCase(role)) {
+                history.add(0, new AssistantMessage(content));
+            }
+            return null;
+        }, chatId, userId);
+
+        boolean escalateToGemini = requiresCognitiveEscalation(history, prompt);
+        boolean isComplex = isComplexRequest(prompt);
+        boolean cacheable = isCacheableQuery(prompt);
+
+        if (cacheable && !escalateToGemini) {
+            SearchRequest searchRequest = SearchRequest.builder()
+                    .query(prompt)
+                    .topK(1)
+                    .similarityThreshold(0.85)
+                    .filterExpression(new Filter.Expression(
+                            Filter.ExpressionType.EQ,
+                            new Filter.Key("userId"),
+                            new Filter.Value(userId)))
+                    .build();
+
+            List<Document> similarDocs = vectorStore.similaritySearch(searchRequest);
+            if (!similarDocs.isEmpty()) {
+                String cachedResp = similarDocs.get(0).getMetadata().get("answer").toString() + "\n\n[⚡ CACHED: Pinecone Vector Database]";
+                return Flux.just(cachedResp);
+            }
+        }
+
+        history.add(new UserMessage(prompt));
+        Flux<String> chatResponseStream = null;
+        String routingTag = "";
+
+        if (escalateToGemini) {
+            try {
+                routingTag = "\n\n[🧠 ESCALATED: gemini-3.5-flash]";
+                chatResponseStream = ChatClient.builder(geminiModel).build().prompt()
+                        .system("You are an advanced AI correcting a previous error. Analyze the chat history closely. Provide a precise, accurate correction matching their current context.")
+                        .messages(history)
+                        .options(GoogleGenAiChatOptions.builder().model("gemini-3.5-flash").build())
+                        .stream()
+                        .content();
+            } catch (Exception e) {
+                logger.warn("Gemini API Overloaded (503). Triggering Fallback to Groq Llama 3.3.");
+                routingTag = "\n\n[🛡️ FAILSAFE ROUTED: Groq Llama 3.3 Heavy Brain]";
+                chatResponseStream = ChatClient.builder(groqModel).build().prompt()
+                        .system("You are a senior AI. The user is frustrated. Correct the previous mistakes immediately.")
+                        .messages(history)
+                        .options(OpenAiChatOptions.builder().model("llama-3.3-70b-versatile").build())
+                        .stream()
+                        .content();
+            }
+        } else if (isComplex) {
+            routingTag = "\n\n[🛠️ ROUTED: Groq Llama 3.3 Heavy Brain]";
+            chatResponseStream = ChatClient.builder(groqModel).build().prompt()
+                    .system("You are an Expert Software Engineer. Provide highly detailed technical answers.")
+                    .messages(history)
+                    .options(OpenAiChatOptions.builder().model("llama-3.3-70b-versatile").build())
+                    .stream()
+                    .content();
+        } else {
+            routingTag = "\n\n[🏎️ ROUTED: Groq Llama 3.1 Fast Brain]";
+            chatResponseStream = ChatClient.builder(groqModel).build().prompt()
+                    .system("You are a helpful assistant. Answer the user's specific question accurately based on context.")
+                    .messages(history)
+                    .options(OpenAiChatOptions.builder().model("llama-3.1-8b-instant").build())
+                    .stream()
+                    .content();
+        }
+
+        final String finalRoutingTag = routingTag;
+
+        return chatResponseStream
+                .concatWith(Flux.just(finalRoutingTag))
+                .publish(flux -> {
+                    StringBuilder fullResponse = new StringBuilder();
+                    return flux.doOnNext(fullResponse::append)
+                               .doOnComplete(() -> {
+                                   String responseText = fullResponse.toString();
+                                   String insertSql = "INSERT INTO chat_messages (chat_id, user_id, message_role, message_content) VALUES (?, ?, ?, ?)";
+                                   jdbcTemplate.update(insertSql, chatId, userId, "USER", prompt);
+                                   jdbcTemplate.update(insertSql, chatId, userId, "ASSISTANT", responseText);
+
+                                   if (cacheable && !escalateToGemini) {
+                                       Document doc = new Document(prompt, Map.of(
+                                               "answer", responseText,
+                                               "userId", userId,
+                                               "chatId", chatId));
+                                       vectorStore.add(List.of(doc));
+                                   }
+                               });
+                });
     }
 
     private void saveUsage(String userId, int promptTokens, int completionTokens) {

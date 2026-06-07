@@ -3,7 +3,7 @@ import { useAuth0 } from "@auth0/auth0-react";
 import { v4 as uuidv4 } from "uuid";
 import { ChatMessage, type Message } from "./components/ChatMessage";
 import { ChatInput } from "./components/ChatInput";
-import { sendMessage } from "./api";
+import { sendMessageStream } from "./api";
 
 function App() {
   const {
@@ -57,6 +57,7 @@ function App() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isLoading]);
 
+  // ... inside App component ...
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim() || isLoading) return;
@@ -64,7 +65,7 @@ function App() {
     const userText = input.trim();
     setInput("");
 
-    // Add User message
+    // 1. Add User message
     const userMessage: Message = {
       id: uuidv4(),
       role: "user",
@@ -73,32 +74,33 @@ function App() {
     setMessages((prev) => [...prev, userMessage]);
 
     setIsLoading(true);
+    
+    // 2. Prepare an empty assistant message slot
+    const assistantMsgId = uuidv4();
+    setMessages((prev) => [...prev, { id: assistantMsgId, role: "assistant", content: "" }]);
 
     try {
-      const response = await sendMessage(
+      // 3. Call the streaming API
+      // We pass the callback that updates the message content in real-time
+      await sendMessageStream(
         userText,
         chatId,
         accessToken || undefined,
+        (currentText) => {
+          setMessages((prev) => 
+            prev.map((msg) => 
+              msg.id === assistantMsgId ? { ...msg, content: currentText } : msg
+            )
+          );
+        }
       );
-
-      const assistantMessage: Message = {
-        id: uuidv4(),
-        role: "assistant",
-        content: response.response,
-      };
-
-      setMessages((prev) => [...prev, assistantMessage]);
     } catch (error: unknown) {
-      const errorMessageText =
-        error instanceof Error
-          ? error.message
-          : "Something went wrong while connecting to the AI Gateway.";
-      const errorMessage: Message = {
-        id: uuidv4(),
-        role: "assistant",
-        content: `**Error:** ${errorMessageText}`,
-      };
-      setMessages((prev) => [...prev, errorMessage]);
+      const errorMessageText = error instanceof Error ? error.message : "Error connecting to Gateway.";
+      setMessages((prev) => 
+        prev.map((msg) => 
+          msg.id === assistantMsgId ? { ...msg, content: `**Error:** ${errorMessageText}` } : msg
+        )
+      );
     } finally {
       setIsLoading(false);
     }
