@@ -11,7 +11,6 @@ function App() {
     isAuthenticated,
     error: authError,
     loginWithRedirect,
-    loginWithPopup,
     logout,
     user,
     getAccessTokenSilently,
@@ -155,7 +154,7 @@ function App() {
             </button>
             <button
               onClick={() =>
-                loginWithPopup({
+                loginWithRedirect({
                   authorizationParams: { screen_hint: "signup" },
                 })
               }
