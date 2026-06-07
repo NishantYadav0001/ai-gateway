@@ -63,23 +63,32 @@ export const sendMessageStream = async (
     const lines = chunk.split('\n');
 
     for (const line of lines) {
-        if (line.startsWith('data:')) {
-            // Remove the 'data:' prefix and at most one leading space per SSE spec
-            let content = line.slice(5);
-            if (content.startsWith(' ')) {
-                content = content.slice(1);
-            }
-            
-            // Append the content, preserving intentional spacing between tokens
-            if (content.length > 0) {
-                // If the content is just a newline, replace it with a space 
-                // to maintain paragraph flow
-                if (content === '\\n') content = ' '; 
-                
-                fullText += content;
-                onChunk(fullText);
-            }
+      if (line.startsWith('data:')) {
+        // Remove the 'data:' prefix
+        let content = line.slice(5);
+        
+        // Remove exactly ONE leading space per the SSE spec, preserving the rest
+        if (content.startsWith(' ')) {
+          content = content.slice(1);
         }
+        
+        // Ignore the [DONE] signal that some LLM APIs send at the stream's end
+        if (content.trim() === '[DONE]') continue;
+        
+        if (content.length > 0) {
+          // CRITICAL FIX: Convert escaped newlines back to actual line breaks.
+          // We do NOT replace this with a space anymore!
+          content = content.replace(/\\n/g, '\n'); 
+          
+          fullText += content;
+        }
+      }
+    }
+    
+    // Performance optimization: Update the UI once per network chunk, 
+    // not per individual line, to stop React from stuttering.
+    if (fullText.length > 0) {
+      onChunk(fullText);
     }
   }
 
