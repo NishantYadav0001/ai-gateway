@@ -11,6 +11,7 @@ function App() {
     isAuthenticated,
     error: authError,
     loginWithRedirect,
+    loginWithPopup,
     logout,
     user,
     getAccessTokenSilently,
@@ -147,21 +148,23 @@ function App() {
           <p className="text-zinc-400 mb-8">AI Semantic Gateway</p>
           <div className="space-y-3">
             <button
-              onClick={() => loginWithRedirect()}
+              onClick={() => loginWithPopup()}
               className="w-full px-6 py-3 bg-emerald-600 hover:bg-emerald-700 rounded-lg text-white font-medium transition"
             >
               Login
             </button>
-            <button
-              onClick={() =>
-                loginWithRedirect({
-                  authorizationParams: { screen_hint: "signup" },
-                })
-              }
-              className="w-full px-6 py-3 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-white font-medium transition border border-zinc-700"
+            
+            <p className="text-zinc-500 text-sm mt-4">
+              If the popup is blocked, open the app in a new tab:
+            </p>
+            <a 
+              href="https://nishantyadav01-my-ai-gateway.hf.space" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="block w-full px-6 py-3 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-white font-medium transition border border-zinc-700 text-center"
             >
-              Sign Up
-            </button>
+              Open in New Tab
+            </a>
           </div>
         </div>
       </div>
