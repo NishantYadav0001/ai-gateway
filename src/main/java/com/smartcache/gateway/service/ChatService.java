@@ -20,11 +20,13 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import reactor.core.scheduler.Schedulers;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import reactor.core.publisher.Flux;
+import reactor.core.scheduler.Schedulers;
 
 @Service
 public class ChatService {
@@ -36,6 +38,8 @@ public class ChatService {
     private final VectorStore vectorStore;
     private final JdbcTemplate jdbcTemplate;
     private final ApiUsageRepository apiUsageRepository;
+    private final ChatClient groqChatClient;
+    private final ChatClient geminiChatClient;
 
     public ChatService(OpenAiChatModel groqModel,
                        GoogleGenAiChatModel geminiModel,
@@ -47,6 +51,8 @@ public class ChatService {
         this.vectorStore = vectorStore;
         this.jdbcTemplate = jdbcTemplate;
         this.apiUsageRepository = apiUsageRepository;
+        this.groqChatClient = ChatClient.builder(groqModel).build();
+        this.geminiChatClient = ChatClient.builder(geminiModel).build();
     }
 
     private boolean isComplexRequest(String prompt) {
@@ -132,7 +138,7 @@ public class ChatService {
         if (escalateToGemini) {
             try {
                 routingTag = "[🧠 ESCALATED: gemini-3.5-flash]";
-                chatResponse = ChatClient.builder(geminiModel).build().prompt()
+                chatResponse = geminiChatClient.prompt()
                         .system("You are the SmartCache AI Semantic Gateway, a high-performance technical routing assistant. 1. CONCISENESS: Never use filler text. Jump straight to the technical answer. 2. FORMATTING: Use Markdown. 3. PERSONALITY: Professional and direct. 4. LENGTH: Keep responses as short as possible while remaining accurate.")
                         .messages(history)
                         .options(GoogleGenAiChatOptions.builder().model("gemini-3.5-flash").build())
@@ -142,7 +148,7 @@ public class ChatService {
                 logger.warn("Gemini API Overloaded (503). Triggering Fallback to Groq Llama 3.3.");
                 // FAILSAFE: If Gemini is down, force it to use the Heavy Groq model
                 routingTag = "[🛡️ FAILSAFE ROUTED: Groq Llama 3.3 Heavy Brain]";
-                chatResponse = ChatClient.builder(groqModel).build().prompt()
+                chatResponse = groqChatClient.prompt()
                         .system("You are the SmartCache AI Semantic Gateway, a high-performance technical routing assistant. 1. CONCISENESS: Never use filler text. Jump straight to the technical answer. 2. FORMATTING: Use Markdown. 3. PERSONALITY: Professional and direct. 4. LENGTH: Keep responses as short as possible while remaining accurate.")
                         .messages(history)
                         .options(OpenAiChatOptions.builder().model("llama-3.3-70b-versatile").build())
@@ -151,7 +157,7 @@ public class ChatService {
             }
         } else if (isComplex) {
             routingTag = "[🛠️ ROUTED: Groq Llama 3.3 Heavy Brain]";
-            chatResponse = ChatClient.builder(groqModel).build().prompt()
+            chatResponse = groqChatClient.prompt()
                         .system("You are the SmartCache AI Semantic Gateway, a high-performance technical routing assistant. 1. CONCISENESS: Never use filler text. Jump straight to the technical answer. 2. FORMATTING: Use Markdown. 3. PERSONALITY: Professional and direct. 4. LENGTH: Keep responses as short as possible while remaining accurate.")
                     .messages(history)
                     .options(OpenAiChatOptions.builder().model("llama-3.3-70b-versatile").build())
@@ -159,7 +165,7 @@ public class ChatService {
                     .chatResponse();
         } else {
             routingTag = "[🏎️ ROUTED: Groq Llama 3.1 Fast Brain]";
-            chatResponse = ChatClient.builder(groqModel).build().prompt()
+            chatResponse = groqChatClient.prompt()
                         .system("You are the SmartCache AI Semantic Gateway, a high-performance technical routing assistant. 1. CONCISENESS: Never use filler text. Jump straight to the technical answer. 2. FORMATTING: Use Markdown. 3. PERSONALITY: Professional and direct. 4. LENGTH: Keep responses as short as possible while remaining accurate.")
                     .messages(history)
                     .options(OpenAiChatOptions.builder().model("llama-3.1-8b-instant").build())
@@ -240,7 +246,7 @@ public class ChatService {
         if (escalateToGemini) {
             try {
                 routingTag = "\n\n[🧠 ESCALATED: gemini-3.5-flash]";
-                chatResponseStream = ChatClient.builder(geminiModel).build().prompt()
+                chatResponseStream = geminiChatClient.prompt()
                         .system("You are the SmartCache AI Semantic Gateway, a high-performance technical routing assistant. 1. CONCISENESS: Never use filler text. Jump straight to the technical answer. 2. FORMATTING: Use Markdown. 3. PERSONALITY: Professional and direct. 4. LENGTH: Keep responses as short as possible while remaining accurate.")
                         .messages(history)
                         .options(GoogleGenAiChatOptions.builder().model("gemini-3.5-flash").build())
@@ -249,7 +255,7 @@ public class ChatService {
             } catch (Exception e) {
                 logger.warn("Gemini API Overloaded (503). Triggering Fallback to Groq Llama 3.3.");
                 routingTag = "\n\n[🛡️ FAILSAFE ROUTED: Groq Llama 3.3 Heavy Brain]";
-                chatResponseStream = ChatClient.builder(groqModel).build().prompt()
+                chatResponseStream = groqChatClient.prompt()
                         .system("You are the SmartCache AI Semantic Gateway, a high-performance technical routing assistant. 1. CONCISENESS: Never use filler text. Jump straight to the technical answer. 2. FORMATTING: Use Markdown. 3. PERSONALITY: Professional and direct. 4. LENGTH: Keep responses as short as possible while remaining accurate.")
                         .messages(history)
                         .options(OpenAiChatOptions.builder().model("llama-3.3-70b-versatile").build())
@@ -258,7 +264,7 @@ public class ChatService {
             }
         } else if (isComplex) {
             routingTag = "\n\n[🛠️ ROUTED: Groq Llama 3.3 Heavy Brain]";
-            chatResponseStream = ChatClient.builder(groqModel).build().prompt()
+            chatResponseStream = groqChatClient.prompt()
                         .system("You are the SmartCache AI Semantic Gateway, a high-performance technical routing assistant. 1. CONCISENESS: Never use filler text. Jump straight to the technical answer. 2. FORMATTING: Use Markdown. 3. PERSONALITY: Professional and direct. 4. LENGTH: Keep responses as short as possible while remaining accurate.")
                     .messages(history)
                     .options(OpenAiChatOptions.builder().model("llama-3.3-70b-versatile").build())
@@ -266,7 +272,7 @@ public class ChatService {
                     .content();
         } else {
             routingTag = "\n\n[🏎️ ROUTED: Groq Llama 3.1 Fast Brain]";
-            chatResponseStream = ChatClient.builder(groqModel).build().prompt()
+            chatResponseStream = groqChatClient.prompt()
                         .system("You are the SmartCache AI Semantic Gateway, a high-performance technical routing assistant. 1. CONCISENESS: Never use filler text. Jump straight to the technical answer. 2. FORMATTING: Use Markdown. 3. PERSONALITY: Professional and direct. 4. LENGTH: Keep responses as short as possible while remaining accurate.")
                     .messages(history)
                     .options(OpenAiChatOptions.builder().model("llama-3.1-8b-instant").build())
@@ -278,24 +284,27 @@ public class ChatService {
 
         return chatResponseStream
                 .concatWith(Flux.just(finalRoutingTag))
+                .publishOn(Schedulers.boundedElastic()) // CRITICAL: Moves downstream processing off the main reactive thread
                 .publish(flux -> {
                     StringBuilder fullResponse = new StringBuilder();
                     return flux.doOnNext(fullResponse::append)
                                .doOnComplete(() -> {
-                                   String responseText = fullResponse.toString();
-                                   String insertSql = "INSERT INTO chat_messages (chat_id, user_id, message_role, message_content) VALUES (?, ?, ?, ?)";
-                                   jdbcTemplate.update(insertSql, chatId, userId, "USER", prompt);
-                                   jdbcTemplate.update(insertSql, chatId, userId, "ASSISTANT", responseText);
-
-                                   if (cacheable && !escalateToGemini) {
-                                       Document doc = new Document(prompt, Map.of(
-                                               "answer", responseText,
-                                               "userId", userId,
-                                               "chatId", chatId));
-                                       vectorStore.add(List.of(doc));
-                                   }
+                                   // Now this runs on a background thread pool, not blocking the response stream
+                                   saveToDatabase(chatId, userId, prompt, fullResponse.toString(), cacheable, escalateToGemini);
                                });
                 });
+    }
+
+    private void saveToDatabase(String chatId, String userId, String prompt, String responseText, boolean cacheable, boolean escalate) {
+        String insertSql = "INSERT INTO chat_messages (chat_id, user_id, message_role, message_content) VALUES (?, ?, ?, ?)";
+        jdbcTemplate.update(insertSql, chatId, userId, "USER", prompt);
+        jdbcTemplate.update(insertSql, chatId, userId, "ASSISTANT", responseText);
+
+        if (cacheable && !escalate) {
+            Document doc = new Document(prompt, Map.of(
+                    "answer", responseText, "userId", userId, "chatId", chatId));
+            vectorStore.add(List.of(doc));
+        }
     }
 
     private void saveUsage(String userId, int promptTokens, int completionTokens) {

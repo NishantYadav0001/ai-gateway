@@ -52,6 +52,7 @@ export const sendMessageStream = async (
   const reader = response.body?.getReader();
   const decoder = new TextDecoder();
   let fullText = "";
+  let lastUpdate = 0;
 
   if (!reader) throw new Error("Stream reader not available");
 
@@ -61,8 +62,14 @@ export const sendMessageStream = async (
 
     const chunk = decoder.decode(value, { stream: true });
     fullText += chunk;
-    onChunk(fullText); // Push the updated full string to the UI
+    
+    // Only update the UI every 50ms to keep it smooth and snappy
+    if (Date.now() - lastUpdate > 50) {
+        onChunk(fullText);
+        lastUpdate = Date.now();
+    }
   }
+  onChunk(fullText); // Final update
 
   return fullText;
 };
