@@ -1,6 +1,7 @@
 import { User, Bot } from "lucide-react";
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
+import ReactMarkdown from "react-markdown";
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -18,7 +19,7 @@ interface ChatMessageProps {
   message: Message;
 }
 
-const TAG_REGEX = /\[(CACHED|ROUTED:\s*[^\]]+)\]/gi;
+const TAG_REGEX = /\[(CACHED|ROUTED:\s*[^\]]+|🛡️[^\]]+|🏎️[^\]]+|🧠[^\]]+|🛠️[^\]]+|⚡[^\]]+)\]/gi;
 
 function parseContent(text: string) {
   let cleanText = text;
@@ -38,10 +39,12 @@ function getTagColor(tag: string) {
   const upperTag = tag.toUpperCase();
   if (upperTag.includes("CACHED"))
     return "bg-emerald-500/20 text-emerald-300 border-emerald-500/30";
-  if (upperTag.includes("70B"))
+  if (upperTag.includes("70B") || upperTag.includes("HEAVY"))
     return "bg-purple-500/20 text-purple-300 border-purple-500/30";
-  if (upperTag.includes("8B"))
+  if (upperTag.includes("8B") || upperTag.includes("FAST"))
     return "bg-blue-500/20 text-blue-300 border-blue-500/30";
+  if (upperTag.includes("GEMINI"))
+    return "bg-indigo-500/20 text-indigo-300 border-indigo-500/30";
   return "bg-zinc-500/20 text-zinc-300 border-zinc-500/30"; // fallback
 }
 
@@ -73,11 +76,35 @@ export function ChatMessage({ message }: ChatMessageProps) {
 
         {/* Message Body */}
         <div className="flex flex-col gap-3 min-w-0 flex-1">
-          <div className="text-zinc-100 leading-relaxed whitespace-pre-wrap font-sans">
-            {cleanText}
+          {/* THE UPGRADE: ReactMarkdown handles the parsed cleanText */}
+          <div className="min-w-0 break-words whitespace-pre-wrap text-sm leading-relaxed text-zinc-300 font-sans">
+            <ReactMarkdown
+              components={{
+                p: ({ node, ...props }) => <p className="mb-4 last:mb-0" {...props} />,
+                ul: ({ node, ...props }) => <ul className="list-disc pl-5 mb-4 space-y-1" {...props} />,
+                ol: ({ node, ...props }) => <ol className="list-decimal pl-5 mb-4 space-y-1" {...props} />,
+                li: ({ node, ...props }) => <li className="marker:text-teal-500" {...props} />,
+                strong: ({ node, ...props }) => <strong className="font-semibold text-zinc-100" {...props} />,
+                code: ({ node, inline, className, children, ...props }: any) => {
+                  return inline ? (
+                    <code className="bg-zinc-800/80 text-teal-300 px-1.5 py-0.5 rounded text-xs border border-zinc-700/50" {...props}>
+                      {children}
+                    </code>
+                  ) : (
+                    <pre className="bg-zinc-950 p-4 rounded-xl overflow-x-auto mb-4 border border-zinc-800 shadow-inner">
+                      <code className="text-zinc-300 text-xs font-mono" {...props}>
+                        {children}
+                      </code>
+                    </pre>
+                  );
+                },
+              }}
+            >
+              {cleanText}
+            </ReactMarkdown>
           </div>
 
-          {/* Tags */}
+          {/* Tags (Rendered exactly as you designed them) */}
           {tags.length > 0 && (
             <div className="flex flex-wrap gap-2 mt-2">
               {tags.map((tag, idx) => (
