@@ -52,7 +52,6 @@ export const sendMessageStream = async (
   const reader = response.body?.getReader();
   const decoder = new TextDecoder();
   let fullText = "";
-  let lastUpdate = 0;
 
   if (!reader) throw new Error("Stream reader not available");
 
@@ -61,15 +60,25 @@ export const sendMessageStream = async (
     if (done) break;
 
     const chunk = decoder.decode(value, { stream: true });
-    fullText += chunk;
-    
-    // Only update the UI every 50ms to keep it smooth and snappy
-    if (Date.now() - lastUpdate > 50) {
-        onChunk(fullText);
-        lastUpdate = Date.now();
+    const lines = chunk.split('\n');
+
+    for (const line of lines) {
+        if (line.trim().startsWith('data:')) {
+            // Remove the prefix
+            let content = line.replace('data:', '').trim();
+            
+            // Only append if there is actual content
+            if (content.length > 0) {
+                // If the content is just a newline, replace it with a space 
+                // to maintain paragraph flow
+                if (content === '\\n') content = ' '; 
+                
+                fullText += content;
+                onChunk(fullText);
+            }
+        }
     }
   }
-  onChunk(fullText); // Final update
 
   return fullText;
 };
