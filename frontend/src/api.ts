@@ -52,6 +52,7 @@ export const sendMessageStream = async (
   const reader = response.body?.getReader();
   const decoder = new TextDecoder();
   let fullText = "";
+  let buffer = ""; // Crucial: Buffers chunks that get cut off mid-network transfer
 
   if (!reader) throw new Error("Stream reader not available");
 
@@ -59,34 +60,47 @@ export const sendMessageStream = async (
     const { done, value } = await reader.read();
     if (done) break;
 
-    const chunk = decoder.decode(value, { stream: true });
-    const lines = chunk.split('\n');
+    // Add the new network chunk to our buffer
+    buffer += decoder.decode(value, { stream: true });
 
-    for (const line of lines) {
-      if (line.startsWith('data:')) {
-        // Remove the 'data:' prefix
-        let content = line.slice(5);
-        
-        // Remove exactly ONE leading space per the SSE spec, preserving the rest
-        if (content.startsWith(' ')) {
-          content = content.slice(1);
-        }
-        
-        // Ignore the [DONE] signal that some LLM APIs send at the stream's end
-        if (content.trim() === '[DONE]') continue;
-        
-        if (content.length > 0) {
-          // CRITICAL FIX: Convert escaped newlines back to actual line breaks.
-          // We do NOT replace this with a space anymore!
-          content = content.replace(/\\n/g, '\n'); 
-          
-          fullText += content;
+    // Process complete SSE events (which are separated by double newlines \n\n)
+    let eventEndIndex;
+    while ((eventEndIndex = buffer.indexOf('\n\n')) >= 0) {
+      // Extract the single event and remove it from the buffer
+      const event = buffer.slice(0, eventEndIndex);
+      buffer = buffer.slice(eventEndIndex + 2);
+
+      const lines = event.split('\n');
+      let eventData = "";
+
+      for (const line of lines) {
+        if (line.startsWith('data:')) {
+          let content = line.slice(5);
+          // Remove exactly ONE leading space per the SSE specification
+          // if (content.startsWith(' ')) {
+          //   content = content.slice(1);
+          // }
+          // Re-join multi-line data within the same event
+          if (eventData.length > 0) {
+            eventData += '\n';
+          }
+          eventData += content;
         }
       }
+
+      if (eventData.trim() === '[DONE]') continue;
+
+      if (eventData.length > 0) {
+        // Convert any escaped newlines and append
+        eventData = eventData.replace(/\\n/g, '\n');
+        fullText += eventData;
+      } else if (event.includes('data:')) {
+        // If the AI specifically generated an empty line break, respect it exactly once
+        fullText += '\n';
+      }
     }
-    
-    // Performance optimization: Update the UI once per network chunk, 
-    // not per individual line, to stop React from stuttering.
+
+    // Update the UI smoothly
     if (fullText.length > 0) {
       onChunk(fullText);
     }

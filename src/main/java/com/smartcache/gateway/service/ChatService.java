@@ -20,13 +20,13 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import reactor.core.publisher.Flux;
 import reactor.core.scheduler.Schedulers;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import reactor.core.publisher.Flux;
-import reactor.core.scheduler.Schedulers;
+import java.util.Set;
 
 @Service
 public class ChatService {
@@ -49,10 +49,8 @@ public class ChatService {
     private final ChatClient groqChatClient;
     private final ChatClient geminiChatClient;
 
-    public ChatService(OpenAiChatModel groqModel,
-                       GoogleGenAiChatModel geminiModel,
-                       VectorStore vectorStore,
-                       JdbcTemplate jdbcTemplate,
+    public ChatService(OpenAiChatModel groqModel, GoogleGenAiChatModel geminiModel,
+                       VectorStore vectorStore, JdbcTemplate jdbcTemplate,
                        ApiUsageRepository apiUsageRepository) {
         this.groqModel = groqModel;
         this.geminiModel = geminiModel;
@@ -63,244 +61,69 @@ public class ChatService {
         this.geminiChatClient = ChatClient.builder(geminiModel).build();
     }
 
-    private boolean isComplexRequest(String prompt) {
-        String text = prompt.toLowerCase();
-        return text.contains("code") || text.contains("java") || 
-               text.contains("math") || text.contains("calculate") || 
-               text.contains("system design") || text.contains("database");
-    }
+    // --- STATIC SETS FOR INTELLIGENT ROUTING ---
+    private static final Set<String> COMPLEX_WORDS = Set.of(
+        "code", "java", "python", "sql", "math", "calculate", "database", 
+        "algorithm", "debug", "optimize", "architecture", "deployment", "frontend",
+        "backend", "api", "docker", "kubernetes", "query", "script"
+    );
 
-    private boolean isCacheableQuery(String prompt) {
-        String text = prompt.toLowerCase().trim();
-        String[] feedbackKeywords = {"wrong", "incorrect", "not what i asked", "try again", "fail", "inaccurate", "bad answer", "fix this"};
-        for (String keyword : feedbackKeywords) {
-            if (text.contains(keyword)) return false; 
-        }
-        return text.length() > 8;
-    }
+    private static final Set<String> COMPLEX_PHRASES = Set.of(
+        "system design", "spring boot", "react native", "machine learning", "data structures"
+    );
 
-    private boolean requiresCognitiveEscalation(List<Message> history, String currentPrompt) {
-        String text = currentPrompt.toLowerCase();
-        String[] struggleKeywords = {"wrong", "incorrect", "not what i asked", "try again", "fail", "inaccurate"};
+    private static final Set<String> ESCALATION_WORDS = Set.of(
+        "wrong", "incorrect", "fail", "inaccurate", "bad", "broken", 
+        "useless", "ignore", "stop", "stupid", "error", "terrible"
+    );
+
+    private static final Set<String> ESCALATION_PHRASES = Set.of(
+        "not what i asked", "try again", "fix this", "didn't work", 
+        "do it right", "you misunderstood", "read my prompt"
+    );
+
+    // ==========================================
+    // 1. REUSABLE HELPER METHODS (DRY Principle)
+    // ==========================================
+
+    private List<Message> loadChatHistory(String chatId, String userId) {
+        List<Message> history = new ArrayList<>();
+        String selectSql = "SELECT message_role, message_content FROM chat_messages " +
+                "WHERE chat_id = ? AND user_id = ? ORDER BY id DESC LIMIT 10";
+
+        jdbcTemplate.query(selectSql, (rs, rowNum) -> {
+            String role = rs.getString("message_role");
+            String content = rs.getString("message_content");
+            // Strip out internal tags so LLMs don't mimic them
+            String cleanContent = content.replaceAll("\\[(CACHED|ROUTED:|🛡️|🏎️|🧠|🛠️|⚡)[^\\]]+\\]", "").trim();
+
+            if ("USER".equalsIgnoreCase(role)) {
+                history.add(0, new UserMessage(cleanContent));
+            } else if ("ASSISTANT".equalsIgnoreCase(role)) {
+                history.add(0, new AssistantMessage(cleanContent));
+            }
+            return null;
+        }, chatId, userId);
         
-        for (String keyword : struggleKeywords) {
-            if (text.contains(keyword)) return true; 
-        }
-
-        for (Message msg : history) {
-            if (msg instanceof UserMessage && msg.getText().trim().equalsIgnoreCase(currentPrompt.trim())) {
-                return true;
-            }
-        }
-        return false;
+        return history;
     }
 
-    public String processChatMessage(String chatId, String prompt, String userId) {
-        if (userId == null || userId.isBlank()) {
-            throw new IllegalArgumentException("JWT subject (userId) is required");
+    private String checkVectorCache(String prompt, String userId) {
+        SearchRequest searchRequest = SearchRequest.builder()
+                .query(prompt)
+                .topK(1)
+                .similarityThreshold(0.85)
+                .filterExpression(new Filter.Expression(
+                        Filter.ExpressionType.EQ,
+                        new Filter.Key("userId"),
+                        new Filter.Value(userId)))
+                .build();
+
+        List<Document> similarDocs = vectorStore.similaritySearch(searchRequest);
+        if (!similarDocs.isEmpty()) {
+            return similarDocs.get(0).getMetadata().get("answer").toString() + "\n\n[⚡ CACHED: Pinecone Vector Database]";
         }
-
-        List<Message> history = new ArrayList<>();
-        String selectSql = "SELECT message_role, message_content FROM chat_messages " +
-                "WHERE chat_id = ? AND user_id = ? ORDER BY id DESC LIMIT 10";
-
-        jdbcTemplate.query(selectSql, (rs, rowNum) -> {
-            String role = rs.getString("message_role");
-            String content = rs.getString("message_content");
-            if ("USER".equalsIgnoreCase(role)) {
-                history.add(0, new UserMessage(content));
-            } else if ("ASSISTANT".equalsIgnoreCase(role)) {
-                history.add(0, new AssistantMessage(content));
-            }
-            return null;
-        }, chatId, userId);
-
-        boolean escalateToGemini = requiresCognitiveEscalation(history, prompt);
-        boolean isComplex = isComplexRequest(prompt);
-        boolean cacheable = isCacheableQuery(prompt);
-
-        if (cacheable && !escalateToGemini) {
-            SearchRequest searchRequest = SearchRequest.builder()
-                    .query(prompt)
-                    .topK(1)
-                    .similarityThreshold(0.85)
-                    .filterExpression(new Filter.Expression(
-                            Filter.ExpressionType.EQ,
-                            new Filter.Key("userId"),
-                            new Filter.Value(userId)))
-                    .build();
-
-            List<Document> similarDocs = vectorStore.similaritySearch(searchRequest);
-            if (!similarDocs.isEmpty()) {
-                return similarDocs.get(0).getMetadata().get("answer").toString() + "\n\n[⚡ CACHED: Pinecone Vector Database]";
-            }
-        }
-
-        history.add(new UserMessage(prompt));
-        ChatResponse chatResponse = null;
-        String routingTag = "";
-
-        // ==========================================
-        // ROUTING ENGINE WITH FAILSAFE RESILIENCE
-        // ==========================================
-        if (escalateToGemini) {
-            try {
-                routingTag = "[🧠 ESCALATED: gemini-3.5-flash]";
-                chatResponse = geminiChatClient.prompt()
-                        .system(SYSTEM_PROMPT)
-                        .messages(history)
-                        .options(GoogleGenAiChatOptions.builder().model("gemini-3.5-flash").build())
-                        .call()
-                        .chatResponse();
-            } catch (Exception e) {
-                logger.warn("Gemini API Overloaded (503). Triggering Fallback to Groq Llama 3.3.");
-                // FAILSAFE: If Gemini is down, force it to use the Heavy Groq model
-                routingTag = "[🛡️ FAILSAFE ROUTED: Groq Llama 3.3 Heavy Brain]";
-                chatResponse = groqChatClient.prompt()
-                        .system(SYSTEM_PROMPT)
-                        .messages(history)
-                        .options(OpenAiChatOptions.builder().model("llama-3.3-70b-versatile").build())
-                        .call()
-                        .chatResponse();
-            }
-        } else if (isComplex) {
-            routingTag = "[🛠️ ROUTED: Groq Llama 3.3 Heavy Brain]";
-            chatResponse = groqChatClient.prompt()
-                        .system(SYSTEM_PROMPT)
-                    .messages(history)
-                    .options(OpenAiChatOptions.builder().model("llama-3.3-70b-versatile").build())
-                        .call()
-                    .chatResponse();
-        } else {
-            routingTag = "[🏎️ ROUTED: Groq Llama 3.1 Fast Brain]";
-            chatResponse = groqChatClient.prompt()
-                        .system(SYSTEM_PROMPT)
-                    .messages(history)
-                    .options(OpenAiChatOptions.builder().model("llama-3.1-8b-instant").build())
-                        .call()
-                    .chatResponse();
-        }
-
-        String responseText = chatResponse.getResult().getOutput().getText();
-        Usage usage = chatResponse.getMetadata() != null ? chatResponse.getMetadata().getUsage() : null;
-        int promptTokens = usage != null && usage.getPromptTokens() != null ? usage.getPromptTokens() : 0;
-        int completionTokens = usage != null && usage.getCompletionTokens() != null ? usage.getCompletionTokens() : 0;
-
-        saveUsage(userId, promptTokens, completionTokens);
-
-        String insertSql = "INSERT INTO chat_messages (chat_id, user_id, message_role, message_content) VALUES (?, ?, ?, ?)";
-        jdbcTemplate.update(insertSql, chatId, userId, "USER", prompt);
-        jdbcTemplate.update(insertSql, chatId, userId, "ASSISTANT", responseText);
-
-        responseText = responseText + "\n\n" + routingTag;
-
-        if (cacheable && !escalateToGemini) {
-            Document doc = new Document(prompt, Map.of(
-                    "answer", responseText,
-                    "userId", userId,
-                    "chatId", chatId));
-            vectorStore.add(List.of(doc));
-        }
-
-        return responseText;
-    }
-
-    public Flux<String> processChatMessageStream(String chatId, String prompt, String userId) {
-        if (userId == null || userId.isBlank()) {
-            throw new IllegalArgumentException("JWT subject (userId) is required");
-        }
-
-        List<Message> history = new ArrayList<>();
-        String selectSql = "SELECT message_role, message_content FROM chat_messages " +
-                "WHERE chat_id = ? AND user_id = ? ORDER BY id DESC LIMIT 10";
-
-        jdbcTemplate.query(selectSql, (rs, rowNum) -> {
-            String role = rs.getString("message_role");
-            String content = rs.getString("message_content");
-            if ("USER".equalsIgnoreCase(role)) {
-                history.add(0, new UserMessage(content));
-            } else if ("ASSISTANT".equalsIgnoreCase(role)) {
-                history.add(0, new AssistantMessage(content));
-            }
-            return null;
-        }, chatId, userId);
-
-        boolean escalateToGemini = requiresCognitiveEscalation(history, prompt);
-        boolean isComplex = isComplexRequest(prompt);
-        boolean cacheable = isCacheableQuery(prompt);
-
-        if (cacheable && !escalateToGemini) {
-            SearchRequest searchRequest = SearchRequest.builder()
-                    .query(prompt)
-                    .topK(1)
-                    .similarityThreshold(0.85)
-                    .filterExpression(new Filter.Expression(
-                            Filter.ExpressionType.EQ,
-                            new Filter.Key("userId"),
-                            new Filter.Value(userId)))
-                    .build();
-
-            List<Document> similarDocs = vectorStore.similaritySearch(searchRequest);
-            if (!similarDocs.isEmpty()) {
-                String cachedResp = similarDocs.get(0).getMetadata().get("answer").toString() + "\n\n[⚡ CACHED: Pinecone Vector Database]";
-                return Flux.just(cachedResp);
-            }
-        }
-
-        history.add(new UserMessage(prompt));
-        Flux<String> chatResponseStream = null;
-        String routingTag = "";
-
-        if (escalateToGemini) {
-            try {
-                routingTag = "\n\n[🧠 ESCALATED: gemini-3.5-flash]";
-                chatResponseStream = geminiChatClient.prompt()
-                        .system(SYSTEM_PROMPT)
-                        .messages(history)
-                        .options(GoogleGenAiChatOptions.builder().model("gemini-3.5-flash").build())
-                        .stream()
-                        .content();
-            } catch (Exception e) {
-                logger.warn("Gemini API Overloaded (503). Triggering Fallback to Groq Llama 3.3.");
-                routingTag = "\n\n[🛡️ FAILSAFE ROUTED: Groq Llama 3.3 Heavy Brain]";
-                chatResponseStream = groqChatClient.prompt()
-                        .system(SYSTEM_PROMPT)
-                        .messages(history)
-                        .options(OpenAiChatOptions.builder().model("llama-3.3-70b-versatile").build())
-                        .stream()
-                        .content();
-            }
-        } else if (isComplex) {
-            routingTag = "\n\n[🛠️ ROUTED: Groq Llama 3.3 Heavy Brain]";
-            chatResponseStream = groqChatClient.prompt()
-                        .system(SYSTEM_PROMPT)
-                    .messages(history)
-                    .options(OpenAiChatOptions.builder().model("llama-3.3-70b-versatile").build())
-                    .stream()
-                    .content();
-        } else {
-            routingTag = "\n\n[🏎️ ROUTED: Groq Llama 3.1 Fast Brain]";
-            chatResponseStream = groqChatClient.prompt()
-                        .system(SYSTEM_PROMPT)
-                    .messages(history)
-                    .options(OpenAiChatOptions.builder().model("llama-3.1-8b-instant").build())
-                    .stream()
-                    .content();
-        }
-
-        final String finalRoutingTag = routingTag;
-
-        return chatResponseStream
-                .concatWith(Flux.just(finalRoutingTag))
-                .publishOn(Schedulers.boundedElastic()) // CRITICAL: Moves downstream processing off the main reactive thread
-                .publish(flux -> {
-                    StringBuilder fullResponse = new StringBuilder();
-                    return flux.doOnNext(fullResponse::append)
-                               .doOnComplete(() -> {
-                                   // Now this runs on a background thread pool, not blocking the response stream
-                                   saveToDatabase(chatId, userId, prompt, fullResponse.toString(), cacheable, escalateToGemini);
-                               });
-                });
+        return null;
     }
 
     private void saveToDatabase(String chatId, String userId, String prompt, String responseText, boolean cacheable, boolean escalate) {
@@ -317,5 +140,135 @@ public class ChatService {
 
     private void saveUsage(String userId, int promptTokens, int completionTokens) {
         apiUsageRepository.save(new ApiUsage(userId, promptTokens, completionTokens));
+    }
+
+    // --- EVALUATION LOGIC ---
+    
+    private boolean isComplexRequest(String prompt) {
+        String lowerPrompt = prompt.toLowerCase().trim();
+        String[] words = lowerPrompt.split("\\W+"); 
+        for (String word : words) { if (COMPLEX_WORDS.contains(word)) return true; }
+        for (String phrase : COMPLEX_PHRASES) { if (lowerPrompt.contains(phrase)) return true; }
+        return false;
+    }
+
+    private boolean isCacheableQuery(String prompt) {
+        String lowerPrompt = prompt.toLowerCase().trim();
+        if (lowerPrompt.length() <= 8) return false;
+        String[] words = lowerPrompt.split("\\W+");
+        for (String word : words) { if (ESCALATION_WORDS.contains(word)) return false; }
+        for (String phrase : ESCALATION_PHRASES) { if (lowerPrompt.contains(phrase)) return false; }
+        return true;
+    }
+
+    private boolean requiresCognitiveEscalation(List<Message> history, String currentPrompt) {
+        String lowerPrompt = currentPrompt.toLowerCase().trim();
+        String[] words = lowerPrompt.split("\\W+");
+        for (String word : words) { if (ESCALATION_WORDS.contains(word)) return true; }
+        for (String phrase : ESCALATION_PHRASES) { if (lowerPrompt.contains(phrase)) return true; }
+
+        if (history != null && !history.isEmpty()) {
+            for (int i = history.size() - 1; i >= 0; i--) {
+                Message msg = history.get(i);
+                if (msg instanceof UserMessage) {
+                    return msg.getText().trim().equalsIgnoreCase(currentPrompt.trim());
+                }
+            }
+        }
+        return false;
+    }
+
+    // ==========================================
+    // 2. THE MAIN PROCESSING ENDPOINTS
+    // ==========================================
+
+    public String processChatMessage(String chatId, String prompt, String userId) {
+        if (userId == null || userId.isBlank()) throw new IllegalArgumentException("JWT subject (userId) is required");
+
+        List<Message> history = loadChatHistory(chatId, userId);
+        boolean escalateToGemini = requiresCognitiveEscalation(history, prompt);
+        boolean isComplex = isComplexRequest(prompt);
+        boolean cacheable = isCacheableQuery(prompt);
+
+        if (cacheable && !escalateToGemini) {
+            String cachedResponse = checkVectorCache(prompt, userId);
+            if (cachedResponse != null) return cachedResponse;
+        }
+
+        history.add(new UserMessage(prompt));
+        ChatResponse chatResponse = null;
+        String routingTag = "";
+
+        if (escalateToGemini) {
+            try {
+                routingTag = "\n\n[🧠 ESCALATED: gemini-3.5-flash]";
+                chatResponse = geminiChatClient.prompt().system(SYSTEM_PROMPT).messages(history).options(GoogleGenAiChatOptions.builder().model("gemini-3.5-flash").build()).call().chatResponse();
+            } catch (Exception e) {
+                logger.warn("Gemini API Overloaded (503). Triggering Fallback to Groq Llama 3.3.");
+                routingTag = "\n\n[🛡️ FAILSAFE ROUTED: Groq Llama 3.3 Heavy Brain]";
+                chatResponse = groqChatClient.prompt().system(SYSTEM_PROMPT).messages(history).options(OpenAiChatOptions.builder().model("llama-3.3-70b-versatile").build()).call().chatResponse();
+            }
+        } else if (isComplex) {
+            routingTag = "\n\n[🛠️ ROUTED: Groq Llama 3.3 Heavy Brain]";
+            chatResponse = groqChatClient.prompt().system(SYSTEM_PROMPT).messages(history).options(OpenAiChatOptions.builder().model("llama-3.3-70b-versatile").build()).call().chatResponse();
+        } else {
+            routingTag = "\n\n[🏎️ ROUTED: Groq Llama 3.1 Fast Brain]";
+            chatResponse = groqChatClient.prompt().system(SYSTEM_PROMPT).messages(history).options(OpenAiChatOptions.builder().model("llama-3.1-8b-instant").build()).call().chatResponse();
+        }
+
+        String responseText = chatResponse.getResult().getOutput().getText();
+        Usage usage = chatResponse.getMetadata() != null ? chatResponse.getMetadata().getUsage() : null;
+        saveUsage(userId, usage != null && usage.getPromptTokens() != null ? usage.getPromptTokens() : 0, usage != null && usage.getCompletionTokens() != null ? usage.getCompletionTokens() : 0);
+
+        responseText += routingTag;
+        saveToDatabase(chatId, userId, prompt, responseText, cacheable, escalateToGemini);
+
+        return responseText;
+    }
+
+    public Flux<String> processChatMessageStream(String chatId, String prompt, String userId) {
+        if (userId == null || userId.isBlank()) throw new IllegalArgumentException("JWT subject (userId) is required");
+
+        List<Message> history = loadChatHistory(chatId, userId);
+        boolean escalateToGemini = requiresCognitiveEscalation(history, prompt);
+        boolean isComplex = isComplexRequest(prompt);
+        boolean cacheable = isCacheableQuery(prompt);
+
+        if (cacheable && !escalateToGemini) {
+            String cachedResponse = checkVectorCache(prompt, userId);
+            if (cachedResponse != null) return Flux.just(cachedResponse);
+        }
+
+        history.add(new UserMessage(prompt));
+        Flux<String> chatResponseStream;
+        String routingTag = "";
+
+        if (escalateToGemini) {
+            try {
+                routingTag = "\n\n[🧠 ESCALATED: gemini-3.5-flash]";
+                chatResponseStream = geminiChatClient.prompt().system(SYSTEM_PROMPT).messages(history).options(GoogleGenAiChatOptions.builder().model("gemini-3.5-flash").build()).stream().content();
+            } catch (Exception e) {
+                logger.warn("Gemini API Overloaded (503). Triggering Fallback to Groq Llama 3.3.");
+                routingTag = "\n\n[🛡️ FAILSAFE ROUTED: Groq Llama 3.3 Heavy Brain]";
+                chatResponseStream = groqChatClient.prompt().system(SYSTEM_PROMPT).messages(history).options(OpenAiChatOptions.builder().model("llama-3.3-70b-versatile").build()).stream().content();
+            }
+        } else if (isComplex) {
+            routingTag = "\n\n[🛠️ ROUTED: Groq Llama 3.3 Heavy Brain]";
+            chatResponseStream = groqChatClient.prompt().system(SYSTEM_PROMPT).messages(history).options(OpenAiChatOptions.builder().model("llama-3.3-70b-versatile").build()).stream().content();
+        } else {
+            routingTag = "\n\n[🏎️ ROUTED: Groq Llama 3.1 Fast Brain]";
+            chatResponseStream = groqChatClient.prompt().system(SYSTEM_PROMPT).messages(history).options(OpenAiChatOptions.builder().model("llama-3.1-8b-instant").build()).stream().content();
+        }
+
+        final String finalRoutingTag = routingTag;
+
+        return chatResponseStream
+                .concatWith(Flux.just(finalRoutingTag))
+                .publishOn(Schedulers.boundedElastic())
+                .publish(flux -> {
+                    StringBuilder fullResponse = new StringBuilder();
+                    return flux.doOnNext(fullResponse::append)
+                               .doOnComplete(() -> saveToDatabase(chatId, userId, prompt, fullResponse.toString(), cacheable, escalateToGemini));
+                });
     }
 }

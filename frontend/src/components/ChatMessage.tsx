@@ -80,12 +80,14 @@ export function ChatMessage({ message }: ChatMessageProps) {
           <div className="min-w-0 break-words whitespace-pre-wrap text-sm leading-relaxed text-zinc-300 font-sans">
             <ReactMarkdown
               components={{
-                p: ({ node, ...props }) => <p className="mb-4 last:mb-0" {...props} />,
-                ul: ({ node, ...props }) => <ul className="list-disc pl-5 mb-4 space-y-1" {...props} />,
-                ol: ({ node, ...props }) => <ol className="list-decimal pl-5 mb-4 space-y-1" {...props} />,
-                li: ({ node, ...props }) => <li className="marker:text-teal-500" {...props} />,
-                strong: ({ node, ...props }) => <strong className="font-semibold text-zinc-100" {...props} />,
-                code: ({ node, inline, className, children, ...props }: any) => {
+                /* We use _node to tell the terminal linter to ignore the unused variable */
+                p: ({ node: _node, ...props }) => <p className="mb-3 last:mb-0" {...props} />,
+                ul: ({ node: _node, ...props }) => <ul className="list-disc pl-5 mb-4 space-y-1.5" {...props} />,
+                ol: ({ node: _node, ...props }) => <ol className="list-decimal pl-5 mb-4 space-y-1.5" {...props} />,
+                li: ({ node: _node, ...props }) => <li className="marker:text-teal-500 pl-1" {...props} />,
+                strong: ({ node: _node, ...props }) => <strong className="font-semibold text-zinc-100" {...props} />,
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unused-vars
+                code: ({ node: _node, inline, className, children, ...props }: any) => {
                   return inline ? (
                     <code className="bg-zinc-800/80 text-teal-300 px-1.5 py-0.5 rounded text-xs border border-zinc-700/50" {...props}>
                       {children}
