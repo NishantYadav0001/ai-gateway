@@ -10,11 +10,12 @@ function App() {
     isLoading: authLoading,
     isAuthenticated,
     error: authError,
-    loginWithPopup,
+    loginWithRedirect, // FIX: Changed from loginWithPopup to handle redirects natively
     logout,
     user,
     getAccessTokenSilently,
   } = useAuth0();
+
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -23,40 +24,31 @@ function App() {
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Get access token when authenticated with production-grade error handling
+  // Fetch access token cleanly once authenticated
   useEffect(() => {
     if (isAuthenticated) {
       getAccessTokenSilently({
         authorizationParams: {
-          audience:
-            import.meta.env.VITE_AUTH0_AUDIENCE ||
-            "https://api.smartcache.gateway",
+          audience: import.meta.env.VITE_AUTH0_AUDIENCE || "https://api.smartcache.gateway",
         },
       })
         .then((token) => setAccessToken(token))
         .catch((err) => {
-          // Handle missing refresh token - user needs to re-authenticate
           if (err.error === "missing_refresh_token") {
             console.warn("Refresh token expired or invalid. Logging out user.");
             logout({ logoutParams: { returnTo: window.location.origin } });
           } else {
-            // Log other token retrieval errors but don't logout automatically
-            console.error("Token retrieval failed:", {
-              error: err.error,
-              errorDescription: err.error_description,
-              message: err.message,
-            });
+            console.error("Token retrieval failed:", err);
           }
         });
     }
   }, [isAuthenticated, getAccessTokenSilently, logout]);
 
-  // Auto-scroll to bottom whenever messages change
+  // Auto-scroll management
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isLoading]);
 
-  // ... inside App component ...
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim() || isLoading) return;
@@ -64,40 +56,34 @@ function App() {
     const userText = input.trim();
     setInput("");
 
-    // 1. Add User message
     const userMessage: Message = {
       id: uuidv4(),
       role: "user",
       content: userText,
     };
     setMessages((prev) => [...prev, userMessage]);
-
     setIsLoading(true);
     
-    // 2. Prepare an empty assistant message slot
     const assistantMsgId = uuidv4();
     setMessages((prev) => [...prev, { id: assistantMsgId, role: "assistant", content: "" }]);
 
     try {
-      // 3. Call the streaming API
-      // We pass the callback that updates the message content in real-time
       await sendMessageStream(
         userText,
         chatId,
         accessToken || undefined,
         (currentText) => {
           setMessages((prev) => {
-      const lastMsg = prev[prev.length - 1];
-      // Only update if the message is actually the assistant's message
-      if (lastMsg.role === 'assistant') {
-        return [
-          ...prev.slice(0, -1),
-          { ...lastMsg, content: currentText }
-        ];
-      }
-      return prev;
-    });
-  }
+            const lastMsg = prev[prev.length - 1];
+            if (lastMsg && lastMsg.role === 'assistant') {
+              return [
+                ...prev.slice(0, -1),
+                { ...lastMsg, content: currentText }
+              ];
+            }
+            return prev;
+          });
+        }
       );
     } catch (error: unknown) {
       const errorMessageText = error instanceof Error ? error.message : "Error connecting to Gateway.";
@@ -111,7 +97,7 @@ function App() {
     }
   };
 
-  // Show loading state while Auth0 is initializing
+  // 1. Authentication Loading State
   if (authLoading) {
     return (
       <div className="flex items-center justify-center h-screen bg-zinc-900">
@@ -123,20 +109,16 @@ function App() {
     );
   }
 
-  // Show error state if Auth0 has an error
+  // 2. Authentication Error State
   if (authError) {
-    function loginWithRedirect(): void {
-      throw new Error("Function not implemented.");
-    }
-
     return (
       <div className="flex items-center justify-center h-screen bg-zinc-900">
-        <div className="text-center max-w-md">
-          <p className="text-red-400 mb-4">Authentication Error</p>
-          <p className="text-zinc-400 mb-6">{authError.message}</p>
+        <div className="text-center max-w-md px-4">
+          <p className="text-red-400 mb-2 font-semibold">Authentication Error</p>
+          <p className="text-zinc-400 text-sm mb-6">{authError.message}</p>
           <button
-            onClick={() => loginWithRedirect()}
-            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 rounded-lg text-white transition"
+            onClick={() => loginWithRedirect()} // FIX: Removed the throwing placeholder function
+            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 rounded-lg text-white transition font-medium"
           >
             Retry Login
           </button>
@@ -145,74 +127,56 @@ function App() {
     );
   }
 
-  // Show login/signup screen if not authenticated
+  // 3. Unauthenticated State (Cleaned Landing Screen)
   if (!isAuthenticated) {
     return (
       <div className="flex items-center justify-center h-screen bg-zinc-900">
-        <div className="text-center">
+        <div className="text-center max-w-sm px-4">
           <div className="w-16 h-16 rounded-2xl bg-emerald-500/10 flex items-center justify-center border border-emerald-500/20 mx-auto mb-6">
             <span className="text-3xl">🔐</span>
           </div>
           <h1 className="text-3xl font-bold text-zinc-100 mb-2">SmartCache AI</h1>
-          <p className="text-zinc-400 mb-8">AI Semantic Gateway</p>
-          <div className="space-y-3">
-            <button
-              onClick={() => loginWithPopup()}
-              className="w-full px-6 py-3 bg-emerald-600 hover:bg-emerald-700 rounded-lg text-white font-medium transition"
-            >
-              Login
-            </button>
-            
-            <p className="text-zinc-500 text-sm mt-4">
-              If the popup is blocked, open the app in a new tab:
-            </p>
-            <a 
-              href="https://nishantyadav01-my-ai-gateway.hf.space" 
-              target="_blank" 
-              rel="noopener noreferrer"
-              className="block w-full px-6 py-3 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-white font-medium transition border border-zinc-700 text-center"
-            >
-              Open in New Tab
-            </a>
-          </div>
+          <p className="text-zinc-400 mb-8 text-sm">AI Semantic Gateway</p>
+          
+          <button
+            onClick={() => loginWithRedirect()} // FIX: Swapped out popup authentication completely
+            className="w-full px-6 py-3 bg-emerald-600 hover:bg-emerald-700 rounded-lg text-white font-medium transition shadow-lg shadow-emerald-600/10"
+          >
+            Log In / Sign Up
+          </button>
+          
+          <p className="text-zinc-500 text-xs mt-6 leading-relaxed">
+            Running inside an iframe environment? If authentication redirects fail, make sure you are accessing the gateway directly via its direct URL.
+          </p>
         </div>
       </div>
     );
   }
 
-  // Main app UI (authenticated)
+  // 4. Main App Component State (Authenticated)
   return (
     <div className="flex flex-col h-screen bg-zinc-900 overflow-hidden font-sans text-zinc-100">
-      {/* Header */}
       <header className="flex-shrink-0 border-b border-zinc-800 bg-zinc-900/50 backdrop-blur-md z-10">
         <div className="flex items-center justify-between max-w-3xl mx-auto px-4 py-3 md:px-6 w-full">
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center border border-emerald-500/20">
-              <span className="text-emerald-400 font-bold tracking-tighter">
-                AI
-              </span>
+              <span className="text-emerald-400 font-bold tracking-tighter text-sm">AI</span>
             </div>
-            <h1 className="font-semibold text-zinc-100 tracking-tight">
-              SmartCache
-            </h1>
+            <h1 className="font-semibold text-zinc-100 tracking-tight">SmartCache</h1>
           </div>
 
           <div className="flex items-center gap-3">
-            {user && (
-              <div className="flex items-center gap-2">
-                <img
-                  src={user.picture}
-                  alt={user.name}
-                  className="w-8 h-8 rounded-full"
-                  title={user.email}
-                />
-              </div>
+            {user?.picture && (
+              <img
+                src={user.picture}
+                alt={user.name || "User profile"}
+                className="w-8 h-8 rounded-full border border-zinc-700"
+                title={user.email}
+              />
             )}
             <button
-              onClick={() =>
-                logout({ logoutParams: { returnTo: window.location.origin } })
-              }
-              className="px-3 py-1 text-sm bg-zinc-800 hover:bg-zinc-700 rounded-lg transition"
+              onClick={() => logout({ logoutParams: { returnTo: window.location.origin } })}
+              className="px-3 py-1 text-sm bg-zinc-800 hover:bg-zinc-700 rounded-lg transition text-zinc-300"
             >
               Logout
             </button>
@@ -220,25 +184,16 @@ function App() {
         </div>
       </header>
 
-      {/* Chat Area */}
       <div className="flex-1 overflow-y-auto scroll-smooth">
         {messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-zinc-500 space-y-4 px-4 text-center">
             <div className="w-16 h-16 rounded-2xl bg-zinc-800/50 flex items-center justify-center border border-zinc-700/50 mb-4">
               <span className="text-2xl">✨</span>
             </div>
-            <h2 className="text-xl font-medium text-zinc-300">
-              How can I help you today?
-            </h2>
-            <p className="max-w-sm text-sm leading-relaxed">
-              Experience lightning-fast responses with our intelligent caching
-              layer and dynamic Llama model routing.
+            <h2 className="text-xl font-medium text-zinc-300">How can I help you today?</h2>
+            <p className="max-w-sm text-sm leading-relaxed text-zinc-400">
+              Experience lightning-fast responses with our intelligent caching layer and dynamic Llama model routing.
             </p>
-            {user && (
-              <p className="text-xs text-zinc-600 mt-4">
-                Logged in as {user.email}
-              </p>
-            )}
           </div>
         ) : (
           <div className="flex flex-col pb-4">
@@ -265,23 +220,19 @@ function App() {
                 </div>
               </div>
             )}
-
             <div ref={messagesEndRef} className="h-4" />
           </div>
         )}
       </div>
 
-      {/* Input Area */}
-      {isAuthenticated && (
-        <div className="flex-shrink-0 bg-gradient-to-t from-zinc-900 via-zinc-900 to-transparent pt-4">
-          <ChatInput
-            input={input}
-            setInput={setInput}
-            onSubmit={handleSubmit}
-            isLoading={isLoading}
-          />
-        </div>
-      )}
+      <div className="flex-shrink-0 bg-gradient-to-t from-zinc-900 via-zinc-900 to-transparent pt-4">
+        <ChatInput
+          input={input}
+          setInput={setInput}
+          onSubmit={handleSubmit}
+          isLoading={isLoading}
+        />
+      </div>
     </div>
   );
 }
