@@ -108,6 +108,29 @@ public class ChatService {
         return history;
     }
 
+    public List<Map<String, Object>> getUserChatSessions(String userId) {
+        // Gets the last 10 unique chats, using the user's first prompt as the title
+        String sql = """
+            SELECT chat_id, 
+                   MAX(id) as last_activity_id,
+                   (SELECT message_content FROM chat_messages m2 
+                    WHERE m2.chat_id = m1.chat_id AND message_role = 'USER' 
+                    ORDER BY id ASC LIMIT 1) as chat_title
+            FROM chat_messages m1 
+            WHERE user_id = ? 
+            GROUP BY chat_id 
+            ORDER BY last_activity_id DESC 
+            LIMIT 10
+        """;
+        
+        return jdbcTemplate.queryForList(sql, userId);
+    }
+    public List<Map<String, Object>> getChatMessages(String chatId, String userId) {
+        String sql = "SELECT message_role as role, message_content as content FROM chat_messages " +
+                     "WHERE chat_id = ? AND user_id = ? ORDER BY id ASC";
+        return jdbcTemplate.queryForList(sql, chatId, userId);
+    }
+
     private String checkVectorCache(String prompt, String userId) {
         SearchRequest searchRequest = SearchRequest.builder()
                 .query(prompt)
@@ -127,15 +150,27 @@ public class ChatService {
     }
 
     private void saveToDatabase(String chatId, String userId, String prompt, String responseText, boolean cacheable, boolean escalate) {
-        String insertSql = "INSERT INTO chat_messages (chat_id, user_id, message_role, message_content) VALUES (?, ?, ?, ?)";
-        jdbcTemplate.update(insertSql, chatId, userId, "USER", prompt);
-        jdbcTemplate.update(insertSql, chatId, userId, "ASSISTANT", responseText);
+        try {
+            String insertSql = "INSERT INTO chat_messages (chat_id, user_id, message_role, message_content) VALUES (?, ?, ?, ?)";
+            jdbcTemplate.update(insertSql, chatId, userId, "USER", prompt);
+            jdbcTemplate.update(insertSql, chatId, userId, "ASSISTANT", responseText);
 
-        if (cacheable && !escalate) {
-            Document doc = new Document(prompt, Map.of(
-                    "answer", responseText, "userId", userId, "chatId", chatId));
-            vectorStore.add(List.of(doc));
+            if (cacheable && !escalate) {
+                Document doc = new Document(prompt, Map.of(
+                        "answer", responseText, "userId", userId, "chatId", chatId));
+                vectorStore.add(List.of(doc));
+            }
+            logger.info("✅ Successfully saved chat to database: " + chatId);
+        } catch (Exception e) {
+            // 👈 NEW: This will print the exact SQL error to your terminal!
+            logger.error("❌ CRITICAL ERROR SAVING TO DATABASE: ", e); 
         }
+    }
+
+    // --- DELETE CHAT ---
+    public void deleteChatSession(String chatId, String userId) {
+        String sql = "DELETE FROM chat_messages WHERE chat_id = ? AND user_id = ?";
+        jdbcTemplate.update(sql, chatId, userId);
     }
 
     private void saveUsage(String userId, int promptTokens, int completionTokens) {
@@ -261,14 +296,19 @@ public class ChatService {
         }
 
         final String finalRoutingTag = routingTag;
+        
+        // We use an array because variables inside reactive lambdas must be final
+        final String[] fullResponseBuffer = {""}; 
 
         return chatResponseStream
                 .concatWith(Flux.just(finalRoutingTag))
-                .publishOn(Schedulers.boundedElastic())
-                .publish(flux -> {
-                    StringBuilder fullResponse = new StringBuilder();
-                    return flux.doOnNext(fullResponse::append)
-                               .doOnComplete(() -> saveToDatabase(chatId, userId, prompt, fullResponse.toString(), cacheable, escalateToGemini));
+                .doOnNext(token -> fullResponseBuffer[0] += token) // Accumulate the text
+                .publishOn(Schedulers.boundedElastic()) // Move to background thread
+                .doOnComplete(() -> {
+                    // This is guaranteed to run safely when the stream finishes
+                    saveToDatabase(chatId, userId, prompt, fullResponseBuffer[0], cacheable, escalateToGemini);
                 });
     }
+
+    
 }

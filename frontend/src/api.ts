@@ -34,7 +34,8 @@ export const sendMessageStream = async (
   prompt: string,
   chatId: string,
   jwt: string | undefined,
-  onChunk: (text: string) => void
+  onChunk: (text: string) => void,
+  signal?: AbortSignal
 ): Promise<string> => {
   const baseURL = import.meta.env.DEV ? "http://localhost:8080/api/v1" : "/api/v1";
   
@@ -45,6 +46,7 @@ export const sendMessageStream = async (
       ...(jwt ? { Authorization: `Bearer ${jwt}` } : {}),
     },
     body: JSON.stringify({ prompt, chatId }),
+    signal,
   });
 
   if (!response.ok) throw new Error("Streaming failed");

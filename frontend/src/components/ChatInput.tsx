@@ -1,5 +1,5 @@
 import React, { useRef, useEffect } from "react";
-import { Send, Loader2 } from "lucide-react";
+import { Send, Square } from "lucide-react"; // Swapped Loader2 for Square icon
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
 
@@ -12,6 +12,7 @@ interface ChatInputProps {
   setInput: (value: string) => void;
   onSubmit: (e: React.FormEvent) => void;
   isLoading: boolean;
+  onStop?: () => void; // NEW: Added the onStop prop
 }
 
 export function ChatInput({
@@ -19,6 +20,7 @@ export function ChatInput({
   setInput,
   onSubmit,
   isLoading,
+  onStop,
 }: ChatInputProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -67,22 +69,34 @@ export function ChatInput({
           )}
         />
 
-        <button
-          type="submit"
-          disabled={!input.trim() || isLoading}
-          className={cn(
-            "p-2 rounded-lg flex-shrink-0 transition-all mb-0.5",
-            input.trim() && !isLoading
-              ? "bg-zinc-100 text-zinc-900 hover:bg-zinc-200"
-              : "bg-zinc-800 text-zinc-600 cursor-not-allowed",
-          )}
-        >
-          {isLoading ? (
-            <Loader2 size={18} className="animate-spin" />
-          ) : (
+        {/* DYNAMIC BUTTON: Switches between Send and Stop */}
+        {isLoading ? (
+          <button
+            type="button" // Important: type="button" prevents accidental form submission
+            onClick={onStop}
+            className={cn(
+              "p-2 rounded-lg flex-shrink-0 transition-all mb-0.5",
+              "bg-zinc-700 text-zinc-300 hover:bg-zinc-600 hover:text-white"
+            )}
+            title="Stop generating"
+          >
+            <Square size={16} fill="currentColor" />
+          </button>
+        ) : (
+          <button
+            type="submit"
+            disabled={!input.trim()}
+            className={cn(
+              "p-2 rounded-lg flex-shrink-0 transition-all mb-0.5",
+              input.trim()
+                ? "bg-zinc-100 text-zinc-900 hover:bg-zinc-200"
+                : "bg-zinc-800 text-zinc-600 cursor-not-allowed",
+            )}
+            title="Send message"
+          >
             <Send size={18} className={input.trim() ? "translate-x-px" : ""} />
-          )}
-        </button>
+          </button>
+        )}
       </form>
       <div className="text-center mt-3 text-xs text-zinc-500 font-medium tracking-wide">
         This is an AI-powered Gateway. It can make mistakes, so please verify the information it provides. Do not share sensitive information with it.
