@@ -15,7 +15,15 @@ function App() {
     user,
     getAccessTokenSilently,
   } = useAuth0();
+  const [isInIframe, setIsInIframe] = useState(false);
 
+  useEffect(() => {
+    // Detect if the app is running inside the Hugging Face iframe
+    if (window.self !== window.top) {
+      setIsInIframe(true);
+    }
+  }, []);
+  
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -23,7 +31,7 @@ function App() {
   const [accessToken, setAccessToken] = useState<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
-
+  
   // Fetch access token cleanly once authenticated
   useEffect(() => {
     if (isAuthenticated) {
@@ -96,6 +104,26 @@ function App() {
       setIsLoading(false);
     }
   };
+  if (isInIframe) {
+    return (
+      <div className="flex items-center justify-center h-screen bg-zinc-900">
+        <div className="text-center p-8 bg-zinc-800 rounded-xl border border-zinc-700 shadow-2xl max-w-md mx-4">
+          <h2 className="text-xl font-bold text-white mb-4">Security Requirement</h2>
+          <p className="text-zinc-400 mb-6 text-sm">
+            Authentication requires this app to run in its own window, not inside the Hugging Face preview wrapper.
+          </p>
+          <a 
+            href={window.location.href}
+            target="_blank" 
+            rel="noopener noreferrer"
+            className="inline-block px-6 py-3 bg-emerald-600 hover:bg-emerald-700 rounded-lg text-white font-medium transition"
+          >
+            Launch Full Application
+          </a>
+        </div>
+      </div>
+    );
+  }
 
   // 1. Authentication Loading State
   if (authLoading) {
